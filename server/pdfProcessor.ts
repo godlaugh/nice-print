@@ -77,28 +77,46 @@ function generatePrintSlideHtml(contentHtml: string, pageNum: number): string {
 <head>
 <meta charset="UTF-8">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #fff; font-family: Arial, sans-serif; color: #000; }
+  /* Reset — minimal so LLM inline styles take full effect */
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    background: #fff;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+  }
   .slide {
     width: 1280px;
     min-height: 720px;
-    background: #fff;
-    color: #000;
-    padding: 60px 80px 40px;
+    background: #fff !important;
+    color: #000 !important;
+    padding: 56px 72px 48px;
     position: relative;
-    page-break-after: always;
+    overflow: hidden;
   }
-  h1 { font-size: 52px; font-weight: 700; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 3px solid #000; }
-  h2 { font-size: 40px; font-weight: 700; margin-bottom: 25px; padding-bottom: 12px; border-bottom: 2px solid #000; }
-  h3 { font-size: 30px; font-weight: 700; margin-bottom: 15px; }
-  p { font-size: 24px; line-height: 1.7; margin-bottom: 16px; }
-  ul, ol { margin-left: 40px; margin-bottom: 20px; }
-  li { font-size: 24px; line-height: 1.7; margin-bottom: 10px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-  th, td { padding: 12px 16px; border: 1px solid #000; font-size: 22px; text-align: left; }
-  th { font-weight: bold; background: #f0f0f0; }
-  blockquote { border-left: 5px solid #000; padding: 12px 20px 12px 24px; background: #f9f9f9; margin: 20px 0; font-style: italic; }
-  .page-num { position: absolute; bottom: 24px; right: 36px; font-size: 16px; color: #666; }
+  /* Force all backgrounds to white and all text to black */
+  .slide * {
+    background-color: transparent !important;
+    color: #000 !important;
+    border-color: #ccc !important;
+  }
+  /* Restore acceptable structural borders */
+  .slide [style*="border"] { border-color: #ccc !important; }
+  .slide blockquote { border-left-color: #555 !important; background: #f9f9f9 !important; }
+  .slide th { background: #f0f0f0 !important; }
+  /* Typography defaults (overridden by LLM inline styles) */
+  .slide h1 { font-size: 48px; font-weight: 700; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 3px solid #000 !important; }
+  .slide h2 { font-size: 36px; font-weight: 700; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #000 !important; }
+  .slide h3 { font-size: 28px; font-weight: 700; margin-bottom: 14px; }
+  .slide p { font-size: 20px; line-height: 1.65; margin-bottom: 14px; }
+  .slide ul, .slide ol { margin-left: 36px; margin-bottom: 16px; }
+  .slide li { font-size: 20px; line-height: 1.65; margin-bottom: 8px; }
+  .slide table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  .slide th, .slide td { padding: 10px 14px; border: 1px solid #ccc; font-size: 18px; text-align: left; }
+  .slide th { font-weight: bold; }
+  .slide blockquote { border-left: 4px solid #555; padding: 10px 18px 10px 20px; margin: 16px 0; font-style: italic; }
+  .page-num { position: absolute; bottom: 20px; right: 32px; font-size: 14px; color: #888 !important; }
   @media print { body { background: none; } .slide { box-shadow: none; } }
 </style>
 </head>
@@ -120,21 +138,30 @@ async function extractSlideContent(imageBuffer: Buffer, pageNum: number): Promis
     messages: [
       {
         role: "system",
-        content: `You are a slide content extractor. Extract ALL text and structural content from the slide image.
-Return ONLY clean HTML using basic tags: <h1>, <h2>, <h3>, <p>, <ul>, <li>, <ol>, <table>, <tr>, <th>, <td>, <blockquote>, <strong>, <em>.
-Rules:
-- Ignore ALL background colors, decorative images, and color blocks
-- Keep ALL text content, including titles, subtitles, body text, bullet points, tables
-- Preserve the logical hierarchy (headings → body → lists)
-- Do NOT include <html>, <head>, <body>, <style> tags
-- Output only the inner HTML content for the slide body`,
+        content: `You are an expert slide layout reconstructor. Your job is to convert a slide image into a print-friendly HTML layout that FAITHFULLY REPRODUCES the original visual structure.
+
+CRITICAL RULES:
+1. PRESERVE LAYOUT STRUCTURE: If the slide has 2 columns → use CSS flexbox/grid with 2 columns. If it has 3 cards/boxes → render 3 side-by-side boxes. If it has a title + grid of items → keep that grid. Match the original spatial arrangement as closely as possible.
+2. REMOVE ALL COLORS: Set ALL backgrounds to white (#fff or transparent). Set ALL text to black (#000 or #333). Remove all colored borders, colored backgrounds, gradients, and decorative color blocks.
+3. KEEP BORDERS/STRUCTURE: Thin light-gray borders (1px solid #ccc or #ddd) are acceptable to show card/box boundaries. Do NOT remove structural boxes — just make them white with a light border.
+4. PRESERVE ALL TEXT: Include every word visible in the slide — titles, subtitles, body text, bullet points, captions, labels.
+5. INLINE STYLES ONLY: Use inline style attributes for layout (e.g. style="display:flex;gap:24px"). Do NOT output <style> tags, <html>, <head>, or <body> tags.
+6. FONT SIZES: Use relative sizes that match the visual hierarchy — large for titles, medium for body, small for captions.
+7. COMMON PATTERNS to handle:
+   - Title + 3 cards side by side → <div style="display:flex;gap:20px"><div style="flex:1;border:1px solid #ccc;padding:20px">...</div>...</div>
+   - Title + bullet list → <h2>Title</h2><ul><li>...</li></ul>
+   - Two-column layout → <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+   - Table → standard <table> with borders
+   - Quote/callout box → <blockquote style="border-left:4px solid #000;padding:12px 20px;background:#f9f9f9">
+
+Output ONLY the inner HTML body content. No markdown, no code fences, no explanation.`,
       },
       {
         role: "user",
         content: [
           {
             type: "text",
-            text: `Extract all content from this slide (page ${pageNum}). Return only clean HTML.`,
+            text: `Reconstruct this slide (page ${pageNum}) as print-friendly HTML. Preserve the original layout structure exactly, but replace ALL colors with white backgrounds and black text.`,
           },
           {
             type: "image_url",
