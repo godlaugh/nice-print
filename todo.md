@@ -41,3 +41,6 @@
 - [x] Backend: POST /api/convert/:id/reprocess endpoint — reset slides, re-run processPdf
 - [x] Frontend: Re-process button in History with loading state and redirect to Convert page on completion
 - [x] Fix blank slides: root cause = LLM generates height:100vh which pushes content off-screen in iframe/Puppeteer. Fix: CSS override for 100vh + explicit rule in AI prompt to use min-height:600px instead. All 7 tests passing.
+- [x] Fix slide overflow: enforce strict height:720px on .slide container so content never spills into next page
+- [x] Fix aspect ratio: each slide is now exactly 1280x720px (16:9) with overflow:hidden
+- [x] AI prompt: added font size guide (h1:36-42px, body:14-18px) and spacing guide, instructed LLM to reduce sizes for dense content
