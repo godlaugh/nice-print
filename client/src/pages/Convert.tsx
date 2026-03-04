@@ -72,20 +72,20 @@ export default function Convert() {
   const currentSlide = slides[previewPage];
 
   const handleDownload = () => {
-    if (conversionData?.downloadUrl) {
-      const a = document.createElement("a");
-      a.href = conversionData.downloadUrl;
-      a.download = `${conversionData.filename?.replace(".pdf", "") ?? "slides"}_print.html`;
-      a.click();
-    }
+    // Download as print-friendly PDF via server-side Chromium rendering
+    const a = document.createElement("a");
+    a.href = `/api/convert/${conversionId}/download-pdf`;
+    a.download = `${conversionData?.filename?.replace(/\.pdf$/i, "") ?? "slides"}_print.pdf`;
+    a.click();
   };
 
   const handleDownloadSingle = (html: string, pageNum: number) => {
+    // Single slide: still download as HTML (quick, no server round-trip)
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `slide_${pageNum}.html`;
+    a.download = `slide_${pageNum}_print.html`;
     a.click();
     URL.revokeObjectURL(url);
   };

@@ -34,3 +34,4 @@
 ## Bug Fixes
 - [x] Fix PDF-to-image conversion: replace pdf2pic (requires GraphicsMagick) with pdftoppm (poppler-utils, pre-installed)
 - [x] E2E fix: replaced pdfinfo (not in Node.js PATH) with pdf-lib (pure JS) for page count — verified with full e2e simulation
+- [x] Download outputs PDF (not HTML): server-side puppeteer-core + system Chromium renders HTML → A4 landscape PDF, e2e verified (21KB test PDF generated)

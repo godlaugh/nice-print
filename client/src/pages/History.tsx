@@ -107,14 +107,12 @@ export default function History() {
                         <Button variant="outline" size="sm" onClick={() => navigate(`/convert/${conv.id}`)}>
                           View
                         </Button>
-                        {conv.downloadUrl && (
-                          <Button size="sm" asChild>
-                            <a href={conv.downloadUrl} download>
+                        <Button size="sm" asChild>
+                            <a href={`/api/convert/${conv.id}/download-pdf`} download={`${conv.filename?.replace(/\.pdf$/i, "") ?? "slides"}_print.pdf`}>
                               <Download className="w-3.5 h-3.5 mr-1" />
-                              Download
+                              Download PDF
                             </a>
                           </Button>
-                        )}
                       </>
                     )}
                     {(conv.status === "processing" || conv.status === "pending") && (
