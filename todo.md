@@ -29,4 +29,7 @@
 - [x] Vitest: slide HTML generation helper tests
 
 ## Deployment
-- [ ] Push to GitHub nice-print repo
+- [x] Push to GitHub nice-print repo (https://github.com/godlaugh/nice-print)
+
+## Bug Fixes
+- [x] Fix PDF-to-image conversion: replace pdf2pic (requires GraphicsMagick) with pdftoppm (poppler-utils, pre-installed)

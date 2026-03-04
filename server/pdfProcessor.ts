@@ -1,7 +1,7 @@
-import { fromPath } from "pdf2pic";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { execSync, spawnSync } from "child_process";
 import { invokeLLM } from "./_core/llm";
 import { getDb } from "./db";
 import { conversions, slides } from "../drizzle/schema";
@@ -17,6 +17,49 @@ export function sendProgress(conversionId: number, data: object) {
     const msg = `data: ${JSON.stringify(data)}\n\n`;
     clients.forEach((write) => write(msg));
   }
+}
+
+/** Get total page count of a PDF using pdfinfo (poppler-utils) */
+function getPdfPageCount(pdfPath: string): number {
+  try {
+    const result = execSync(`pdfinfo "${pdfPath}" 2>&1`, { encoding: "utf-8" });
+    const match = result.match(/Pages:\s+(\d+)/);
+    return match ? parseInt(match[1], 10) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Convert a single PDF page to JPEG buffer using pdftoppm (poppler-utils).
+ * pdftoppm is pre-installed on the server and requires no extra dependencies.
+ */
+function convertPageToJpeg(pdfPath: string, pageNum: number, tmpDir: string): Buffer | null {
+  const outPrefix = path.join(tmpDir, `page-${pageNum}`);
+  const result = spawnSync(
+    "pdftoppm",
+    [
+      "-jpeg",
+      "-r", "150",
+      "-jpegopt", "quality=90",
+      "-f", String(pageNum),
+      "-l", String(pageNum),
+      pdfPath,
+      outPrefix,
+    ],
+    { timeout: 60000 }
+  );
+
+  if (result.status !== 0) {
+    console.error(`pdftoppm failed for page ${pageNum}:`, result.stderr?.toString());
+    return null;
+  }
+
+  // pdftoppm names output as <prefix>-<padded_pagenum>.jpg
+  const files = fs.readdirSync(tmpDir).filter((f) => f.startsWith(`page-${pageNum}-`) && f.endsWith(".jpg"));
+  if (files.length === 0) return null;
+
+  return fs.readFileSync(path.join(tmpDir, files[0]));
 }
 
 function generatePrintSlideHtml(contentHtml: string, pageNum: number): string {
@@ -108,34 +151,24 @@ export async function processPdf(conversionId: number, pdfPath: string, original
   try {
     // Update status to processing
     await db.update(conversions).set({ status: "processing" }).where(eq(conversions.id, conversionId));
-    sendProgress(conversionId, { status: "processing", message: "Converting PDF pages to images..." });
+    sendProgress(conversionId, { status: "processing", message: "Reading PDF..." });
 
-    // Convert PDF to images
-    const converter = fromPath(pdfPath, {
-      density: 150,
-      saveFilename: "slide",
-      savePath: tmpDir,
-      format: "jpg",
-      width: 1280,
-      height: 720,
-    });
-
-    // Get page count first
-    const { default: pdfParse } = await import("pdf-parse/lib/pdf-parse.js" as any).catch(() => ({ default: null }));
-    
-    // Use pdf2pic to convert all pages
-    const results = await converter.bulk(-1, { responseType: "buffer" });
-    const pageCount = results.length;
+    // Get page count using pdfinfo (poppler-utils)
+    const pageCount = getPdfPageCount(pdfPath);
+    if (pageCount === 0) {
+      throw new Error("Could not determine PDF page count. Please ensure the file is a valid PDF.");
+    }
 
     await db.update(conversions).set({ pageCount }).where(eq(conversions.id, conversionId));
-    sendProgress(conversionId, { status: "processing", message: `Found ${pageCount} pages. Extracting content...`, pageCount });
+    sendProgress(conversionId, {
+      status: "processing",
+      message: `Found ${pageCount} pages. Converting and extracting content...`,
+      pageCount,
+    });
 
     // Process each page
     const allSlideHtmls: string[] = [];
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      const pageNum = i + 1;
-
+    for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
       sendProgress(conversionId, {
         status: "processing",
         message: `Extracting content from page ${pageNum}/${pageCount}...`,
@@ -145,8 +178,9 @@ export async function processPdf(conversionId: number, pdfPath: string, original
 
       let contentHtml = "<p>Content could not be extracted from this page.</p>";
       try {
-        if (result.buffer) {
-          contentHtml = await extractSlideContent(result.buffer, pageNum);
+        const imageBuffer = convertPageToJpeg(pdfPath, pageNum, tmpDir);
+        if (imageBuffer) {
+          contentHtml = await extractSlideContent(imageBuffer, pageNum);
         }
       } catch (err) {
         console.error(`Error extracting page ${pageNum}:`, err);
