@@ -1,7 +1,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { execSync, spawnSync } from "child_process";
+import { spawnSync } from "child_process";
+import { PDFDocument } from "pdf-lib";
 import { invokeLLM } from "./_core/llm";
 import { getDb } from "./db";
 import { conversions, slides } from "../drizzle/schema";
@@ -19,23 +20,24 @@ export function sendProgress(conversionId: number, data: object) {
   }
 }
 
-/** Get total page count of a PDF using pdfinfo (poppler-utils) */
-function getPdfPageCount(pdfPath: string): number {
-  try {
-    const result = execSync(`pdfinfo "${pdfPath}" 2>&1`, { encoding: "utf-8" });
-    const match = result.match(/Pages:\s+(\d+)/);
-    return match ? parseInt(match[1], 10) : 0;
-  } catch {
-    return 0;
-  }
+/**
+ * Get total page count using pdf-lib (pure JS, no system binary required).
+ * This is reliable in all environments including Docker containers.
+ */
+async function getPdfPageCount(pdfPath: string): Promise<number> {
+  const buf = fs.readFileSync(pdfPath);
+  const doc = await PDFDocument.load(buf, { ignoreEncryption: true });
+  return doc.getPageCount();
 }
 
 /**
  * Convert a single PDF page to JPEG buffer using pdftoppm (poppler-utils).
  * pdftoppm is pre-installed on the server and requires no extra dependencies.
+ * Note: pdftoppm names output files as <prefix>-<padded_pagenum>.jpg
  */
 function convertPageToJpeg(pdfPath: string, pageNum: number, tmpDir: string): Buffer | null {
-  const outPrefix = path.join(tmpDir, `page-${pageNum}`);
+  const outPrefix = path.join(tmpDir, `p${pageNum}`);
+
   const result = spawnSync(
     "pdftoppm",
     [
@@ -55,9 +57,16 @@ function convertPageToJpeg(pdfPath: string, pageNum: number, tmpDir: string): Bu
     return null;
   }
 
-  // pdftoppm names output as <prefix>-<padded_pagenum>.jpg
-  const files = fs.readdirSync(tmpDir).filter((f) => f.startsWith(`page-${pageNum}-`) && f.endsWith(".jpg"));
-  if (files.length === 0) return null;
+  // pdftoppm outputs: <prefix>-<zero_padded_pagenum>.jpg
+  // e.g. prefix "p1" → "p1-01.jpg" or "p1-001.jpg" depending on total pages
+  const files = fs.readdirSync(tmpDir).filter(
+    (f) => f.startsWith(`p${pageNum}-`) && f.endsWith(".jpg")
+  );
+
+  if (files.length === 0) {
+    console.error(`pdftoppm: no output file found for page ${pageNum} in ${tmpDir}. Files:`, fs.readdirSync(tmpDir));
+    return null;
+  }
 
   return fs.readFileSync(path.join(tmpDir, files[0]));
 }
@@ -153,10 +162,10 @@ export async function processPdf(conversionId: number, pdfPath: string, original
     await db.update(conversions).set({ status: "processing" }).where(eq(conversions.id, conversionId));
     sendProgress(conversionId, { status: "processing", message: "Reading PDF..." });
 
-    // Get page count using pdfinfo (poppler-utils)
-    const pageCount = getPdfPageCount(pdfPath);
+    // Get page count using pdf-lib (pure JS — works in all environments)
+    const pageCount = await getPdfPageCount(pdfPath);
     if (pageCount === 0) {
-      throw new Error("Could not determine PDF page count. Please ensure the file is a valid PDF.");
+      throw new Error("Could not read PDF. Please ensure the file is a valid PDF document.");
     }
 
     await db.update(conversions).set({ pageCount }).where(eq(conversions.id, conversionId));
@@ -181,6 +190,8 @@ export async function processPdf(conversionId: number, pdfPath: string, original
         const imageBuffer = convertPageToJpeg(pdfPath, pageNum, tmpDir);
         if (imageBuffer) {
           contentHtml = await extractSlideContent(imageBuffer, pageNum);
+        } else {
+          contentHtml = `<p><em>Could not render page ${pageNum} as image.</em></p>`;
         }
       } catch (err) {
         console.error(`Error extracting page ${pageNum}:`, err);
@@ -226,7 +237,7 @@ ${allSlideHtmls.map((h) => h.match(/<body>([\s\S]*?)<\/body>/)?.[1] ?? "").join(
     sendProgress(conversionId, { status: "error", message: err.message ?? "Conversion failed" });
   } finally {
     // Cleanup temp dir
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
     // Cleanup uploaded PDF
     try { fs.unlinkSync(pdfPath); } catch {}
   }
