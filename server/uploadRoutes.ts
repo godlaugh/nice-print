@@ -129,50 +129,12 @@ router.get("/convert/:id/download-pdf", async (req, res) => {
   const slideList = await getSlidesByConversion(conversionId);
   const sorted = slideList.sort((a, b) => a.pageNum - b.pageNum);
 
-  // Build a single combined HTML with all slides for PDF rendering
-  const slideBodyParts = sorted.map((s) => {
-    // Extract only the body content from each slide's full HTML
-    const match = s.htmlContent.match(/<body>([\s\S]*?)<\/body>/);
-    return match ? match[1] : s.htmlContent;
-  });
-
-  const combinedHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #fff; font-family: Arial, sans-serif; color: #000; }
-  .slide {
-    width: 100%;
-    min-height: 100vh;
-    background: #fff;
-    color: #000;
-    padding: 40px 60px 30px;
-    page-break-after: always;
-    position: relative;
-  }
-  h1 { font-size: 36px; font-weight: 700; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 3px solid #000; }
-  h2 { font-size: 28px; font-weight: 700; margin-bottom: 18px; padding-bottom: 8px; border-bottom: 2px solid #000; }
-  h3 { font-size: 22px; font-weight: 700; margin-bottom: 12px; }
-  p { font-size: 16px; line-height: 1.7; margin-bottom: 12px; }
-  ul, ol { margin-left: 28px; margin-bottom: 14px; }
-  li { font-size: 16px; line-height: 1.7; margin-bottom: 6px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 14px; }
-  th, td { padding: 8px 12px; border: 1px solid #000; font-size: 14px; text-align: left; }
-  th { font-weight: bold; background: #f0f0f0; }
-  blockquote { border-left: 4px solid #000; padding: 8px 16px 8px 18px; background: #f9f9f9; margin: 14px 0; font-style: italic; }
-  .page-num { position: absolute; bottom: 16px; right: 24px; font-size: 12px; color: #888; }
-  @media print { .slide { page-break-after: always; } }
-</style>
-</head>
-<body>
-${slideBodyParts.join("\n")}
-</body>
-</html>`;
+  // Pass each slide's full HTML individually — htmlToPdf renders each at 1280×720px
+  // and merges into a single PDF. This guarantees 1 slide = 1 PDF page.
+  const slideHtmls = sorted.map((s) => s.htmlContent);
 
   try {
-    const pdfBuffer = await htmlToPdf(combinedHtml);
+    const pdfBuffer = await htmlToPdf(slideHtmls);
     const safeName = (conversion.filename ?? "slides").replace(/\.pdf$/i, "").replace(/[^a-zA-Z0-9_\-\s]/g, "_");
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${safeName}_print.pdf"`);

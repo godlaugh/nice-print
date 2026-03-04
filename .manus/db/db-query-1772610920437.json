@@ -1,0 +1,24 @@
+{
+  "query": "SELECT id, filename, status, pageCount, originalPdfKey FROM conversions WHERE status = 'done' ORDER BY id DESC LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 45rJ6nqrUEC5QpR.root --database QHrBPxaNj5NoN2a6vhJ4pp --execute SELECT id, filename, status, pageCount, originalPdfKey FROM conversions WHERE status = 'done' ORDER BY id DESC LIMIT 3;",
+  "rows": [
+    {
+      "id": "4",
+      "filename": "English 9 DEMO.pdf",
+      "status": "done",
+      "pageCount": "25",
+      "originalPdfKey": "originals/4-1772608685410-English_9_DEMO.pdf"
+    },
+    {
+      "id": "3",
+      "filename": "English 9 DEMO.pdf",
+      "status": "done",
+      "pageCount": "25",
+      "originalPdfKey": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfilename\tstatus\tpageCount\toriginalPdfKey\n4\tEnglish 9 DEMO.pdf\tdone\t25\toriginals/4-1772608685410-English_9_DEMO.pdf\n3\tEnglish 9 DEMO.pdf\tdone\t25\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 56
+}
