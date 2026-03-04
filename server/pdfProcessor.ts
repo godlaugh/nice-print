@@ -100,6 +100,15 @@ function generatePrintSlideHtml(contentHtml: string, pageNum: number): string {
     background-color: transparent !important;
     color: #000 !important;
     border-color: #ccc !important;
+    /* Prevent vh/vw units from causing overflow or blank slides */
+    max-height: none !important;
+  }
+  /* Override any height:100vh that LLM may generate — this causes blank slides */
+  .slide > div[style*="100vh"],
+  .slide > div[style*="height:100"],
+  .slide > div[style*="height: 100"] {
+    height: auto !important;
+    min-height: 600px !important;
   }
   /* Restore acceptable structural borders */
   .slide [style*="border"] { border-color: #ccc !important; }
@@ -146,6 +155,7 @@ CRITICAL RULES:
 3. KEEP BORDERS/STRUCTURE: Thin light-gray borders (1px solid #ccc or #ddd) are acceptable to show card/box boundaries. Do NOT remove structural boxes — just make them white with a light border.
 4. PRESERVE ALL TEXT: Include every word visible in the slide — titles, subtitles, body text, bullet points, captions, labels.
 5. INLINE STYLES ONLY: Use inline style attributes for layout (e.g. style="display:flex;gap:24px"). Do NOT output <style> tags, <html>, <head>, or <body> tags.
+6. NEVER USE height:100vh or height:100% on any container — this causes blank slides. Use min-height:600px for full-height centering instead. Example: style="display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:600px"
 6. FONT SIZES: Use relative sizes that match the visual hierarchy — large for titles, medium for body, small for captions.
 7. COMMON PATTERNS to handle:
    - Title + 3 cards side by side → <div style="display:flex;gap:20px"><div style="flex:1;border:1px solid #ccc;padding:20px">...</div>...</div>

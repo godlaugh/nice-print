@@ -40,3 +40,4 @@
 - [x] Store original PDF in S3 during upload so re-processing is possible
 - [x] Backend: POST /api/convert/:id/reprocess endpoint — reset slides, re-run processPdf
 - [x] Frontend: Re-process button in History with loading state and redirect to Convert page on completion
+- [x] Fix blank slides: root cause = LLM generates height:100vh which pushes content off-screen in iframe/Puppeteer. Fix: CSS override for 100vh + explicit rule in AI prompt to use min-height:600px instead. All 7 tests passing.
