@@ -1,10 +1,12 @@
 import express from "express";
 import multer from "multer";
+import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { createConversion, getConversionById, getSlidesByConversion } from "./db";
-import { processPdf, sseClients, sendProgress } from "./pdfProcessor";
+import { createConversion, getConversionById, getSlidesByConversion, updateConversionPdfKey } from "./db";
+import { processPdf, reprocessPdf, sseClients, sendProgress } from "./pdfProcessor";
 import { htmlToPdf } from "./htmlToPdf";
+import { storagePut, storageGet } from "./storage";
 import { sdk } from "./_core/sdk";
 
 const router = express.Router();
@@ -38,6 +40,18 @@ router.post("/convert", upload.single("file"), async (req, res) => {
       status: "pending",
       pageCount: 0,
     });
+
+    // Upload original PDF to S3 for potential re-processing later
+    let originalPdfKey: string | undefined;
+    try {
+      const pdfBuffer = fs.readFileSync(req.file.path);
+      const safeFilename = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+      originalPdfKey = `originals/${conversionId}-${Date.now()}-${safeFilename}`;
+      await storagePut(originalPdfKey, pdfBuffer, "application/pdf");
+      await updateConversionPdfKey(conversionId, originalPdfKey);
+    } catch (err) {
+      console.warn("Could not store original PDF to S3 (re-process will be unavailable):", err);
+    }
 
     // Start processing in background (don't await)
     processPdf(conversionId, req.file.path, req.file.originalname).catch((err) => {
@@ -167,6 +181,41 @@ ${slideBodyParts.join("\n")}
   } catch (err: any) {
     console.error("PDF generation error:", err);
     res.status(500).json({ error: "Failed to generate PDF: " + (err.message ?? "unknown error") });
+  }
+});
+
+// POST /api/convert/:id/reprocess — re-run AI extraction using stored original PDF
+router.post("/convert/:id/reprocess", async (req, res) => {
+  let user;
+  try { user = await sdk.authenticateRequest(req); } catch { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const conversionId = parseInt(req.params.id, 10);
+  const conversion = await getConversionById(conversionId);
+  if (!conversion || conversion.userId !== user.id) { res.status(404).json({ error: "Not found" }); return; }
+  if (!conversion.originalPdfKey) { res.status(400).json({ error: "Original PDF not available for re-processing. Please upload the file again." }); return; }
+  if (conversion.status === "processing" || conversion.status === "pending") {
+    res.status(400).json({ error: "Conversion is already in progress" }); return;
+  }
+
+  try {
+    // Download the original PDF from S3 to a temp file
+    const { url: pdfUrl } = await storageGet(conversion.originalPdfKey);
+    const response = await fetch(pdfUrl);
+    if (!response.ok) throw new Error(`Failed to download original PDF: ${response.statusText}`);
+    const pdfBuffer = Buffer.from(await response.arrayBuffer());
+
+    const tmpPath = path.join(os.tmpdir(), `reprocess-${conversionId}-${Date.now()}.pdf`);
+    fs.writeFileSync(tmpPath, pdfBuffer);
+
+    // Start re-processing in background
+    reprocessPdf(conversionId, tmpPath, conversion.filename).catch((err) => {
+      console.error("Re-processing error:", err);
+    });
+
+    res.json({ success: true, message: "Re-processing started" });
+  } catch (err: any) {
+    console.error("Reprocess error:", err);
+    res.status(500).json({ error: err.message ?? "Failed to start re-processing" });
   }
 });
 

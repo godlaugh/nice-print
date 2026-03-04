@@ -23,6 +23,7 @@ export const conversions = mysqlTable("conversions", {
   pageCount: int("pageCount").default(0).notNull(),
   errorMessage: text("errorMessage"),
   downloadUrl: text("downloadUrl"),
+  originalPdfKey: text("originalPdfKey"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

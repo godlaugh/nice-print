@@ -269,3 +269,25 @@ ${allSlideHtmls.map((h) => h.match(/<body>([\s\S]*?)<\/body>/)?.[1] ?? "").join(
     try { fs.unlinkSync(pdfPath); } catch {}
   }
 }
+
+/**
+ * Re-process an existing conversion: delete old slides and re-run AI extraction.
+ * The original PDF is downloaded from S3 before calling this function.
+ */
+export async function reprocessPdf(conversionId: number, pdfPath: string, originalFilename: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Delete all existing slides for this conversion
+  await db.delete(slides).where(eq(slides.conversionId, conversionId));
+
+  // Reset status and re-run the full processing pipeline
+  await db.update(conversions)
+    .set({ status: "pending", errorMessage: null, downloadUrl: null, pageCount: 0 })
+    .where(eq(conversions.id, conversionId));
+
+  sendProgress(conversionId, { status: "processing", message: "Re-processing started..." });
+
+  // Delegate to the main processPdf function
+  return processPdf(conversionId, pdfPath, originalFilename);
+}

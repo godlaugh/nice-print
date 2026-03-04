@@ -4,7 +4,8 @@ import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, Printer, FileText, Download, Trash2, Loader2, Clock, CheckCircle2, AlertCircle, XCircle } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, Printer, FileText, Download, Trash2, Loader2, Clock, CheckCircle2, AlertCircle, XCircle, RefreshCw } from "lucide-react";
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { icon: React.ReactNode; label: string; cls: string }> = {
@@ -33,6 +34,26 @@ export default function History() {
     onSuccess: () => { toast.success("Deleted successfully"); refetch(); },
     onError: (err) => toast.error(err.message),
   });
+
+  const [reprocessingIds, setReprocessingIds] = useState<Set<number>>(new Set());
+
+  const handleReprocess = async (id: number) => {
+    setReprocessingIds((prev) => new Set(prev).add(id));
+    try {
+      const res = await fetch(`/api/convert/${id}/reprocess`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Failed to start re-processing");
+      } else {
+        toast.success("Re-processing started! Redirecting to progress page...");
+        setTimeout(() => navigate(`/convert/${id}`), 1200);
+      }
+    } catch {
+      toast.error("Network error. Please try again.");
+    } finally {
+      setReprocessingIds((prev) => { const s = new Set(prev); s.delete(id); return s; });
+    }
+  };
 
   if (!isAuthenticated && !loading) {
     return (
@@ -108,12 +129,36 @@ export default function History() {
                           View
                         </Button>
                         <Button size="sm" asChild>
-                            <a href={`/api/convert/${conv.id}/download-pdf`} download={`${conv.filename?.replace(/\.pdf$/i, "") ?? "slides"}_print.pdf`}>
-                              <Download className="w-3.5 h-3.5 mr-1" />
-                              Download PDF
-                            </a>
-                          </Button>
+                          <a href={`/api/convert/${conv.id}/download-pdf`} download={`${conv.filename?.replace(/\.pdf$/i, "") ?? "slides"}_print.pdf`}>
+                            <Download className="w-3.5 h-3.5 mr-1" />
+                            Download PDF
+                          </a>
+                        </Button>
+                        <Button
+                          variant="outline" size="sm"
+                          onClick={() => handleReprocess(conv.id)}
+                          disabled={reprocessingIds.has(conv.id)}
+                          title="Re-process with latest AI to improve layout"
+                        >
+                          {reprocessingIds.has(conv.id)
+                            ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                            : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+                          {reprocessingIds.has(conv.id) ? "Starting..." : "Re-process"}
+                        </Button>
                       </>
+                    )}
+                    {conv.status === "error" && (
+                      <Button
+                        variant="outline" size="sm"
+                        onClick={() => handleReprocess(conv.id)}
+                        disabled={reprocessingIds.has(conv.id)}
+                        title="Retry with latest AI"
+                      >
+                        {reprocessingIds.has(conv.id)
+                          ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                          : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+                        {reprocessingIds.has(conv.id) ? "Starting..." : "Re-process"}
+                      </Button>
                     )}
                     {(conv.status === "processing" || conv.status === "pending") && (
                       <Button variant="outline" size="sm" onClick={() => navigate(`/convert/${conv.id}`)}>

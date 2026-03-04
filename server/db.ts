@@ -82,6 +82,12 @@ export async function deleteConversion(id: number) {
   await db.delete(conversions).where(eq(conversions.id, id));
 }
 
+export async function updateConversionPdfKey(id: number, originalPdfKey: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(conversions).set({ originalPdfKey }).where(eq(conversions.id, id));
+}
+
 // --- Slides ---
 export async function getSlidesByConversion(conversionId: number) {
   const db = await getDb();
